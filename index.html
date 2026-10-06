@@ -10,7 +10,13 @@
   <title>cactus jumping</title>
   <style>
     html, body { margin: 0; height: 100%; }
-    body { display: flex; align-items: center; justify-content: center; }
+    html, body, canvas, img {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body { display: flex; align-items: center; justify-content: center; touch-action: none; }
     canvas { display: block; border: 1px solid black; touch-action: none; }
   </style>
 </head>

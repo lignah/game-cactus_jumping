@@ -146,7 +146,7 @@ class Human {
     }
   }
 }
-// a tap still clears the cactus; holding the key keeps the full -10 launch
+// a tap peaks around 39px; holding keeps the full -10 launch and peaks around 95px
 const MIN_JUMP_VELOCITY= -6.5
 let human = new Human();
 
@@ -154,14 +154,21 @@ let human = new Human();
 
 
 // Obstacle
+// short cacti are cleared by a tap; tall ones need the held jump
 const cactus_images= [cactus_img, cactus_img2]
+const OBSTACLE_KINDS= [
+  { width: 22, height: 34, padX: 5, padTop: 4 },
+  { width: 26, height: 74, padX: 6, padTop: 5 },
+]
 class Obstacle {
-  constructor(img) {
+  constructor(img, kind) {
     this.img= img
+    this.width= kind.width
+    this.height= kind.height
+    this.padX= kind.padX
+    this.padTop= kind.padTop
     this.x= W
-    this.y= H - 42
-    this.width= 30
-    this.height= 45
+    this.y= H - kind.height + 3
   }
 
   draw() {
@@ -310,7 +317,8 @@ function frame60(timestamp) {
     const speed= getSpeed();
     if (timer >= next_spawn_time) {
       const img= cactus_images[Math.floor(Math.random() * cactus_images.length)]
-      obstacles.push(new Obstacle(img));
+      const kind= OBSTACLE_KINDS[Math.floor(Math.random() * OBSTACLE_KINDS.length)]
+      obstacles.push(new Obstacle(img, kind));
       next_spawn_time= timer + randomSpawnGap(speed);
     }
     obstacles.forEach(obstacle=> {
@@ -358,9 +366,9 @@ function collision_detection(human, cactus) {
   const h_right= human.x + human.width - 6
   const h_top= human.y + 4
   const h_bot= human.y + human.height
-  const c_left= cactus.x + 7
-  const c_right= cactus.x + cactus.width - 7
-  const c_top= cactus.y + 5
+  const c_left= cactus.x + cactus.padX
+  const c_right= cactus.x + cactus.width - cactus.padX
+  const c_top= cactus.y + cactus.padTop
   const c_bot= cactus.y + cactus.height
 
   if (h_right > c_left && h_left < c_right && h_bot > c_top && h_top < c_bot) {
@@ -461,17 +469,25 @@ window.addEventListener('touchmove', e=> {
 }, { passive: false });
 
 // jump
+document.addEventListener('selectstart', e=> {
+  e.preventDefault();
+});
+
+document.addEventListener('contextmenu', e=> {
+  e.preventDefault();
+});
+
 document.addEventListener('touchstart', e=> {
+  e.preventDefault();
   resumeAudio();
   if (game_state === 'intro') {
     game_state= 'playing'
   } else if (gameover) {
-    e.preventDefault();
     restartGame();
   } else {
     human.jump();
   }
-});
+}, { passive: false });
 
 document.addEventListener('touchend', $=> {
   human.releaseJump();
