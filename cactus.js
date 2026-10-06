@@ -326,6 +326,8 @@ function frame60(timestamp) {
       ctx.fillStyle = 'rgba(128, 128, 128, 0.5)' // translucent gray
       ctx.fillRect(0, 0, W, H);
 
+      ctx.fillStyle= 'rgba(255, 255, 255, 0.92)'
+      ctx.fillRect(W / 2 - 120, 68, 240, 64);
       ctx.font= '32px serif'
       ctx.fillStyle= 'black'
       ctx.textAlign= 'center'
