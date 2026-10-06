@@ -7,7 +7,6 @@ canvas.height= 200
 
 
 
-
 // image
 let human_array= []
 for (let i= 1; i<= 6; i++) {
@@ -30,16 +29,20 @@ star_img.src= 'public/star.png'
 
 
 
-
 // game status
 let game_state= 'intro'
 
 // score
 let current_score= 0
-let high_score= localStorage.getItem('high_score') || 0
+let high_score= Number(localStorage.getItem('high_score')) || 0
 
 // 사운드
 const audioCtx= new window.AudioContext();
+function resumeAudio() {
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+}
 function playBeep(frequency, startTime, duration) {
   const oscillator= audioCtx.createOscillator();
   const gainNode= audioCtx.createGain();
@@ -80,7 +83,7 @@ class Human {
     this.frame_timer= 0
   }
 
-  draw() {
+  draw(dt) {
     let human_img
     if (this.jumping) {
       if (this.velocity_y < 0) {
@@ -91,7 +94,7 @@ class Human {
         human_img= jumpDownImg
       }
     } else {
-      this.frame_timer++
+      this.frame_timer+= dt
       if (this.frame_timer>= this.frame_interval) {
         this.frame= (this.frame + 1) % human_array.length
         this.frame_timer= 0
@@ -101,10 +104,10 @@ class Human {
     ctx.drawImage(human_img, this.x, this.y, this.width, this.height);
   }
 
-  update() {
+  update(dt) {
     if (this.jumping) {
-      this.velocity_y += this.gravity
-      this.y+= this.velocity_y
+      this.velocity_y += this.gravity * dt
+      this.y+= this.velocity_y * dt
       if (this.y + this.height >= canvas.height) {
         this.y= canvas.height - this.height
         this.jumping= false
@@ -139,8 +142,8 @@ class Cactus {
     ctx.drawImage(cactus_img, this.x, this.y, this.width, this.height);
   }
 
-  update() {
-    this.x -= 4
+  update(dt) {
+    this.x -= 4 * dt
   }
 }
 
@@ -160,8 +163,8 @@ class Cactus2 {
     ctx.drawImage(cactus_img2, this.x, this.y, this.width, this.height);
   }
 
-  update() {
-    this.x -= 4;
+  update(dt) {
+    this.x -= 4 * dt
   }
 }
 
@@ -181,8 +184,8 @@ class Star {
     ctx.drawImage(star_img, this.x, this.y, this.size * 10, this.size * 10);
   }
 
-  update() {
-    this.x -= this.speed
+  update(dt) {
+    this.x -= this.speed * dt
     if (this.x < 0) {
       this.x= canvas.width
       this.y= Math.random() * canvas.height
@@ -206,11 +209,14 @@ let cactus_array= []
 let cactus2_array= []
 let timer= 0
 let animation
+let last_frame_time= null
 let last_cactus_time= 0 // last cactus spawn time
 let last_cactus2_time= 0
 const cactusInterval= 240 // cactus spawn interval
 const cactus2Interval= 500
 const minCactusGap= 100 // minimum gap time between cactus
+const FRAME_MS= 1000 / 60
+const MAX_DT= 3 // clamp so a backgrounded tab doesn't teleport obstacles
 
 
 
@@ -240,60 +246,55 @@ function drawScore() {
 
 
 // game loop
-function frame60() {
-
-  gameover ? null : animation = requestAnimationFrame(frame60);
+function frame60(timestamp) {
+  // dt is measured in 60fps frames so the game runs at the same speed on any refresh rate
+  const dt= last_frame_time === null ? 1 : Math.min((timestamp - last_frame_time) / FRAME_MS, MAX_DT)
+  last_frame_time= timestamp
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   if (game_state === 'intro') {
     drawIntro();
   } else if (game_state === 'playing') {
-    timer++;
+    timer+= dt;
     current_score= Math.floor(timer / 10);
 
     stars.forEach(e=> {
-      e.update();
+      e.update(dt);
       e.draw();
     });
 
-    human.update();
-    human.draw();
+    human.update(dt);
+    human.draw(dt);
 
     drawScore();
-    
+
 
 
 
     // cactus gen
     if (timer - last_cactus_time > cactusInterval) {
-      let cactus= new Cactus();
-      cactus_array.push(cactus);
+      cactus_array.push(new Cactus());
       last_cactus_time= timer;
     }
-    cactus_array.forEach((cactus, index, array)=> {
-      if (cactus.x + cactus.width < 0) {
-        array.splice(index, 1);
-      }
-      cactus.update();
+    cactus_array.forEach(cactus=> {
+      cactus.update(dt);
       cactus.draw();
       collision_detection(human, cactus);
     });
+    cactus_array= cactus_array.filter(cactus=> cactus.x + cactus.width >= 0);
 
     // cactus2 gen
     if (timer - last_cactus2_time > cactus2Interval && timer - last_cactus_time > minCactusGap) {
-      let cactus2= new Cactus2();
-      cactus2_array.push(cactus2);
+      cactus2_array.push(new Cactus2());
       last_cactus2_time = timer;
     }
-    cactus2_array.forEach((cactus2, index, array) => {
-      if (cactus2.x + cactus2.width < 0) {
-        array.splice(index, 1);
-      }
-      cactus2.update();
+    cactus2_array.forEach(cactus2=> {
+      cactus2.update(dt);
       cactus2.draw();
       collision_detection(human, cactus2);
     });
+    cactus2_array= cactus2_array.filter(cactus2=> cactus2.x + cactus2.width >= 0);
 
     if (gameover) {
       ctx.fillStyle = 'rgba(128, 128, 128, 0.5)' // translucent gray
@@ -306,14 +307,20 @@ function frame60() {
       create_restartbutton();
     }
   }
+
+  if (!gameover) {
+    animation= requestAnimationFrame(frame60);
+  }
 }
-frame60();
+animation= requestAnimationFrame(frame60);
 
 
 
 
 // collision
 function collision_detection(human, cactus) {
+  if (gameover) return
+
   const h_left= human.x
   const h_right= human.x + human.width
   const h_top= human.y
@@ -335,6 +342,7 @@ function collision_detection(human, cactus) {
     }
   }
 }
+
 
 
 
@@ -365,7 +373,8 @@ function restartGame() {
   current_score= 0
   last_cactus_time= 0
   last_cactus2_time= 0
-  frame60();
+  last_frame_time= null
+  animation= requestAnimationFrame(frame60);
 }
 
 
@@ -374,6 +383,8 @@ function restartGame() {
 // jump and start
 document.addEventListener('keydown', e=> {
   if (e.code === 'Space') {
+    e.preventDefault();
+    resumeAudio();
     if (game_state === 'intro') {
       game_state= 'playing'
     } else if (!gameover) {
@@ -394,6 +405,7 @@ window.addEventListener('touchmove', e=> {
 
 // jump
 document.addEventListener('touchstart', $=> {
+  resumeAudio();
   if (game_state === 'intro') {
     game_state= 'playing'
   } else if (!gameover) {
