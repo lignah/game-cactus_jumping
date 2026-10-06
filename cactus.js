@@ -129,9 +129,11 @@ let human = new Human();
 
 
 
-// Cactus
-class Cactus {
-  constructor() {
+// Obstacle
+const cactus_images= [cactus_img, cactus_img2]
+class Obstacle {
+  constructor(img) {
+    this.img= img
     this.x= canvas.width
     this.y= canvas.height - 42
     this.width= 30
@@ -139,32 +141,11 @@ class Cactus {
   }
 
   draw() {
-    ctx.drawImage(cactus_img, this.x, this.y, this.width, this.height);
+    ctx.drawImage(this.img, this.x, this.y, this.width, this.height);
   }
 
-  update(dt) {
-    this.x -= 4 * dt
-  }
-}
-
-
-
-
-// Cactus2
-class Cactus2 {
-  constructor() {
-    this.x= canvas.width
-    this.y= canvas.height - 42
-    this.width= 30
-    this.height= 45
-  }
-
-  draw() {
-    ctx.drawImage(cactus_img2, this.x, this.y, this.width, this.height);
-  }
-
-  update(dt) {
-    this.x -= 4 * dt
+  update(dt, speed) {
+    this.x -= speed * dt
   }
 }
 
@@ -205,16 +186,13 @@ for (let i = 0; i < numberOfStars; i++) {
 
 // variable
 let gameover= false
-let cactus_array= []
-let cactus2_array= []
+let obstacles= []
 let timer= 0
 let animation
 let last_frame_time= null
-let last_cactus_time= 0 // last cactus spawn time
-let last_cactus2_time= 0
-const cactusInterval= 240 // cactus spawn interval
-const cactus2Interval= 500
-const minCactusGap= 100 // minimum gap time between cactus
+const FIRST_SPAWN_TIME= 120
+let next_spawn_time= FIRST_SPAWN_TIME
+const BASE_SPEED= 4
 const FRAME_MS= 1000 / 60
 const MAX_DT= 3 // clamp so a backgrounded tab doesn't teleport obstacles
 
@@ -240,6 +218,21 @@ function drawScore() {
   ctx.textAlign= 'right'
   ctx.fillText(`Score: ${current_score}`, canvas.width - 20, 30);
   ctx.fillText(`High Score: ${high_score}`, canvas.width - 20, 50);
+}
+
+
+
+
+// difficulty
+function getSpeed() {
+  return BASE_SPEED
+}
+
+// Gap in frames until the next spawn. A full jump takes 40 frames in the air, so the
+// minimum gap must leave room to land, react and jump again at the current speed.
+function randomSpawnGap(speed) {
+  const min_gap= Math.max(65, 130 - (speed - BASE_SPEED) * 12)
+  return min_gap + Math.random() * min_gap
 }
 
 
@@ -272,29 +265,19 @@ function frame60(timestamp) {
 
 
 
-    // cactus gen
-    if (timer - last_cactus_time > cactusInterval) {
-      cactus_array.push(new Cactus());
-      last_cactus_time= timer;
+    // obstacle gen
+    const speed= getSpeed();
+    if (timer >= next_spawn_time) {
+      const img= cactus_images[Math.floor(Math.random() * cactus_images.length)]
+      obstacles.push(new Obstacle(img));
+      next_spawn_time= timer + randomSpawnGap(speed);
     }
-    cactus_array.forEach(cactus=> {
-      cactus.update(dt);
-      cactus.draw();
-      collision_detection(human, cactus);
+    obstacles.forEach(obstacle=> {
+      obstacle.update(dt, speed);
+      obstacle.draw();
+      collision_detection(human, obstacle);
     });
-    cactus_array= cactus_array.filter(cactus=> cactus.x + cactus.width >= 0);
-
-    // cactus2 gen
-    if (timer - last_cactus2_time > cactus2Interval && timer - last_cactus_time > minCactusGap) {
-      cactus2_array.push(new Cactus2());
-      last_cactus2_time = timer;
-    }
-    cactus2_array.forEach(cactus2=> {
-      cactus2.update(dt);
-      cactus2.draw();
-      collision_detection(human, cactus2);
-    });
-    cactus2_array= cactus2_array.filter(cactus2=> cactus2.x + cactus2.width >= 0);
+    obstacles= obstacles.filter(obstacle=> obstacle.x + obstacle.width >= 0);
 
     if (gameover) {
       ctx.fillStyle = 'rgba(128, 128, 128, 0.5)' // translucent gray
@@ -367,12 +350,10 @@ function restartGame() {
   gameover= false
   game_state= 'playing'
   human= new Human();
-  cactus_array= []
-  cactus2_array= []
+  obstacles= []
   timer= 0
   current_score= 0
-  last_cactus_time= 0
-  last_cactus2_time= 0
+  next_spawn_time= FIRST_SPAWN_TIME
   last_frame_time= null
   animation= requestAnimationFrame(frame60);
 }
