@@ -6,10 +6,9 @@ const ctx= canvas.getContext('2d');
 // logical game resolution; the canvas backing store is scaled to fit the screen and devicePixelRatio
 const W= 355
 const H= 200
-const MAX_SCALE= 2
 let scale= 1
 function resizeCanvas() {
-  scale= Math.min((window.innerWidth - 2) / W, (window.innerHeight - 2) / H, MAX_SCALE)
+  scale= Math.min((window.innerWidth - 2) / W, (window.innerHeight - 2) / H)
   const dpr= window.devicePixelRatio || 1
   canvas.style.width= `${W * scale}px`
   canvas.style.height= `${H * scale}px`
