@@ -181,9 +181,18 @@ class Obstacle {
 class Star {
   constructor() {
     this.x= Math.random() * W
-    this.y= Math.random() * H
+    this.y= 0
     this.size= Math.random() * 2 + 1
     this.speed= Math.random() * 0.5 + 0.5
+    this.place();
+  }
+
+  // keep stars out of the score block and off the ground line
+  place() {
+    this.y= 8 + Math.random() * (H - 70)
+    if (this.x > W - 160 && this.y < 58) {
+      this.y= 58 + Math.random() * 50
+    }
   }
 
   draw() {
@@ -194,9 +203,9 @@ class Star {
     this.x -= this.speed * dt
     if (this.x < 0) {
       this.x= W
-      this.y= Math.random() * H
       this.size= Math.random() * 2 + 1
       this.speed= Math.random() * 0.5 + 0.5
+      this.place();
     }
   }
 }
@@ -298,11 +307,6 @@ function frame60(timestamp) {
     human.update(dt);
     human.draw(dt);
 
-    drawScore();
-
-
-
-
     // obstacle gen
     const speed= getSpeed();
     if (timer >= next_spawn_time) {
@@ -317,6 +321,8 @@ function frame60(timestamp) {
     });
     obstacles= obstacles.filter(obstacle=> obstacle.x + obstacle.width >= 0);
 
+    drawScore();
+
     if (gameover) {
       ctx.fillStyle = 'rgba(128, 128, 128, 0.5)' // translucent gray
       ctx.fillRect(0, 0, W, H);
@@ -324,10 +330,10 @@ function frame60(timestamp) {
       ctx.font= '32px serif'
       ctx.fillStyle= 'black'
       ctx.textAlign= 'center'
-      ctx.fillText('game over', W / 2, H / 2 - 36);
+      ctx.fillText('game over', W / 2, 96);
       if (is_new_high) {
         ctx.font= '18px serif'
-        ctx.fillText('New High Score!', W / 2, H / 2 - 8);
+        ctx.fillText('New High Score!', W / 2, 122);
       }
       create_restartbutton();
     }
@@ -392,8 +398,8 @@ function positionRestartButton() {
   if (!restart_button) return
   restart_button.style.position= 'absolute'
   restart_button.style.left= `${canvas.offsetLeft + (W * scale) / 2}px`
-  restart_button.style.top= `${canvas.offsetTop + (H * scale) / 2}px`
-  restart_button.style.transform= 'translate(-50%, 8px)'
+  restart_button.style.top= `${canvas.offsetTop + 136 * scale}px`
+  restart_button.style.transform= 'translateX(-50%)'
   restart_button.style.width= `${100 * scale}px`
 }
 
