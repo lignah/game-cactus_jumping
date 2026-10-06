@@ -123,7 +123,15 @@ class Human {
       playJumpSound();
     }
   }
+
+  // releasing the jump input early cuts the ascent short for a lower hop
+  releaseJump() {
+    if (this.jumping && this.velocity_y < MIN_JUMP_VELOCITY) {
+      this.velocity_y= MIN_JUMP_VELOCITY
+    }
+  }
 }
+const MIN_JUMP_VELOCITY= -4
 let human = new Human();
 
 
@@ -193,6 +201,8 @@ let last_frame_time= null
 const FIRST_SPAWN_TIME= 120
 let next_spawn_time= FIRST_SPAWN_TIME
 const BASE_SPEED= 4
+const MAX_SPEED= 9
+const SPEED_PER_SCORE= 0.005
 const FRAME_MS= 1000 / 60
 const MAX_DT= 3 // clamp so a backgrounded tab doesn't teleport obstacles
 
@@ -225,7 +235,7 @@ function drawScore() {
 
 // difficulty
 function getSpeed() {
-  return BASE_SPEED
+  return Math.min(BASE_SPEED + current_score * SPEED_PER_SCORE, MAX_SPEED)
 }
 
 // Gap in frames until the next spawn. A full jump takes 40 frames in the air, so the
@@ -304,13 +314,14 @@ animation= requestAnimationFrame(frame60);
 function collision_detection(human, cactus) {
   if (gameover) return
 
-  const h_left= human.x
-  const h_right= human.x + human.width
-  const h_top= human.y
+  // hitboxes are inset from the sprites so near misses on transparent edges don't count
+  const h_left= human.x + 6
+  const h_right= human.x + human.width - 6
+  const h_top= human.y + 4
   const h_bot= human.y + human.height
-  const c_left= cactus.x
-  const c_right= cactus.x + cactus.width
-  const c_top= cactus.y
+  const c_left= cactus.x + 7
+  const c_right= cactus.x + cactus.width - 7
+  const c_top= cactus.y + 5
   const c_bot= cactus.y + cactus.height
 
   if (h_right > c_left && h_left < c_right && h_bot > c_top && h_top < c_bot) {
@@ -374,6 +385,12 @@ document.addEventListener('keydown', e=> {
   }
 });
 
+document.addEventListener('keyup', e=> {
+  if (e.code === 'Space') {
+    human.releaseJump();
+  }
+});
+
 // double click
 canvas.addEventListener('dblclick', e=> {
   e.preventDefault();
@@ -392,4 +409,8 @@ document.addEventListener('touchstart', $=> {
   } else if (!gameover) {
     human.jump();
   }
+});
+
+document.addEventListener('touchend', $=> {
+  human.releaseJump();
 });
