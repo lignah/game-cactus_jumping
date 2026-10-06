@@ -2,8 +2,23 @@
 
 const canvas= document.getElementById('canvas');
 const ctx= canvas.getContext('2d');
-canvas.width= 355
-canvas.height= 200
+
+// logical game resolution; the canvas backing store is scaled to fit the screen and devicePixelRatio
+const W= 355
+const H= 200
+const MAX_SCALE= 2
+let scale= 1
+function resizeCanvas() {
+  scale= Math.min((window.innerWidth - 2) / W, (window.innerHeight - 2) / H, MAX_SCALE)
+  const dpr= window.devicePixelRatio || 1
+  canvas.style.width= `${W * scale}px`
+  canvas.style.height= `${H * scale}px`
+  canvas.width= Math.round(W * scale * dpr)
+  canvas.height= Math.round(H * scale * dpr)
+  ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+  ctx.imageSmoothingEnabled= false
+  positionRestartButton();
+}
 
 
 
@@ -35,6 +50,7 @@ let game_state= 'intro'
 // score
 let current_score= 0
 let high_score= Number(localStorage.getItem('high_score')) || 0
+let is_new_high= false
 
 // 사운드
 const audioCtx= new window.AudioContext();
@@ -72,7 +88,7 @@ function playGameOverSound() {
 class Human {
   constructor() {
     this.x= 10
-    this.y= canvas.height - 30
+    this.y= H - 30
     this.width= 30
     this.height= 30
     this.velocity_y= 0
@@ -88,7 +104,7 @@ class Human {
     if (this.jumping) {
       if (this.velocity_y < 0) {
         human_img= jumpOnImg
-      } else if (this.velocity_y >= 0 && this.y < canvas.height - 120) {
+      } else if (this.velocity_y >= 0 && this.y < H - 120) {
         human_img= jumpIngImg
       } else {
         human_img= jumpDownImg
@@ -108,8 +124,8 @@ class Human {
     if (this.jumping) {
       this.velocity_y += this.gravity * dt
       this.y+= this.velocity_y * dt
-      if (this.y + this.height >= canvas.height) {
-        this.y= canvas.height - this.height
+      if (this.y + this.height >= H) {
+        this.y= H - this.height
         this.jumping= false
         this.velocity_y= 0
       }
@@ -131,7 +147,8 @@ class Human {
     }
   }
 }
-const MIN_JUMP_VELOCITY= -4
+// a tap still clears the cactus; holding the key keeps the full -10 launch
+const MIN_JUMP_VELOCITY= -6.5
 let human = new Human();
 
 
@@ -142,8 +159,8 @@ const cactus_images= [cactus_img, cactus_img2]
 class Obstacle {
   constructor(img) {
     this.img= img
-    this.x= canvas.width
-    this.y= canvas.height - 42
+    this.x= W
+    this.y= H - 42
     this.width= 30
     this.height= 45
   }
@@ -163,8 +180,8 @@ class Obstacle {
 // Star
 class Star {
   constructor() {
-    this.x= Math.random() * canvas.width
-    this.y= Math.random() * canvas.height
+    this.x= Math.random() * W
+    this.y= Math.random() * H
     this.size= Math.random() * 2 + 1
     this.speed= Math.random() * 0.5 + 0.5
   }
@@ -176,8 +193,8 @@ class Star {
   update(dt) {
     this.x -= this.speed * dt
     if (this.x < 0) {
-      this.x= canvas.width
-      this.y= Math.random() * canvas.height
+      this.x= W
+      this.y= Math.random() * H
       this.size= Math.random() * 2 + 1
       this.speed= Math.random() * 0.5 + 0.5
     }
@@ -212,13 +229,13 @@ const MAX_DT= 3 // clamp so a backgrounded tab doesn't teleport obstacles
 // intro
 function drawIntro() {
   ctx.fillStyle= 'black'
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, W, H);
   ctx.font= '28px serif'
   ctx.fillStyle= 'white'
   ctx.textAlign= 'center'
-  ctx.fillText('cactus jumping', canvas.width / 2, canvas.height / 3);
+  ctx.fillText('cactus jumping', W / 2, H / 3);
   ctx.font= '20px serif'
-  ctx.fillText('space to start', canvas.width / 2, canvas.height / 2);
+  ctx.fillText('space to start', W / 2, H / 2);
 }
 
 // score
@@ -226,8 +243,17 @@ function drawScore() {
   ctx.font= '15px serif'
   ctx.fillStyle= 'black'
   ctx.textAlign= 'right'
-  ctx.fillText(`Score: ${current_score}`, canvas.width - 20, 30);
-  ctx.fillText(`High Score: ${high_score}`, canvas.width - 20, 50);
+  ctx.fillText(`Score: ${current_score}`, W - 20, 30);
+  ctx.fillText(`High Score: ${high_score}`, W - 20, 50);
+}
+
+function drawGround() {
+  ctx.strokeStyle= 'black'
+  ctx.lineWidth= 1
+  ctx.beginPath();
+  ctx.moveTo(0, H - 0.5);
+  ctx.lineTo(W, H - 0.5);
+  ctx.stroke();
 }
 
 
@@ -254,7 +280,7 @@ function frame60(timestamp) {
   const dt= last_frame_time === null ? 1 : Math.min((timestamp - last_frame_time) / FRAME_MS, MAX_DT)
   last_frame_time= timestamp
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(0, 0, W, H);
 
   if (game_state === 'intro') {
     drawIntro();
@@ -266,6 +292,8 @@ function frame60(timestamp) {
       e.update(dt);
       e.draw();
     });
+
+    drawGround();
 
     human.update(dt);
     human.draw(dt);
@@ -291,12 +319,16 @@ function frame60(timestamp) {
 
     if (gameover) {
       ctx.fillStyle = 'rgba(128, 128, 128, 0.5)' // translucent gray
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, W, H);
 
       ctx.font= '32px serif'
       ctx.fillStyle= 'black'
       ctx.textAlign= 'center'
-      ctx.fillText('game over', canvas.width / 2, canvas.height / 2 - 24);
+      ctx.fillText('game over', W / 2, H / 2 - 36);
+      if (is_new_high) {
+        ctx.font= '18px serif'
+        ctx.fillText('New High Score!', W / 2, H / 2 - 8);
+      }
       create_restartbutton();
     }
   }
@@ -331,6 +363,7 @@ function collision_detection(human, cactus) {
 
     // update high score
     if (current_score > high_score) {
+      is_new_high= true
       high_score= current_score
       localStorage.setItem('high_score', high_score);
     }
@@ -341,24 +374,41 @@ function collision_detection(human, cactus) {
 
 
 // restart button
+let restart_button= null
 function create_restartbutton() {
-  let button= document.createElement('img');
-  button.src= `public/restart.png`
-  button.style.position = 'absolute'
-  button.style.left= `${canvas.offsetLeft + canvas.width / 2}px`
-  button.style.top= `${canvas.offsetTop + canvas.height / 2}px`
-  button.style.transform= 'translateX(-50%)'
-  button.style.width= '100px'
-  document.body.appendChild(button);
+  if (restart_button) return
+  restart_button= document.createElement('img');
+  restart_button.src= `public/restart.png`
+  restart_button.alt= 'restart'
+  document.body.appendChild(restart_button);
+  positionRestartButton();
 
-  button.addEventListener('click', $=> {
-    document.body.removeChild(button);
+  restart_button.addEventListener('click', $=> {
     restartGame();
   });
 }
 
+function positionRestartButton() {
+  if (!restart_button) return
+  restart_button.style.position= 'absolute'
+  restart_button.style.left= `${canvas.offsetLeft + (W * scale) / 2}px`
+  restart_button.style.top= `${canvas.offsetTop + (H * scale) / 2}px`
+  restart_button.style.transform= 'translate(-50%, 8px)'
+  restart_button.style.width= `${100 * scale}px`
+}
+
+function removeRestartButton() {
+  if (!restart_button) return
+  restart_button.remove();
+  restart_button= null
+}
+
 function restartGame() {
+  if (!gameover) return
+  cancelAnimationFrame(animation);
+  removeRestartButton();
   gameover= false
+  is_new_high= false
   game_state= 'playing'
   human= new Human();
   obstacles= []
@@ -379,7 +429,9 @@ document.addEventListener('keydown', e=> {
     resumeAudio();
     if (game_state === 'intro') {
       game_state= 'playing'
-    } else if (!gameover) {
+    } else if (gameover) {
+      restartGame();
+    } else {
       human.jump();
     }
   }
@@ -402,11 +454,14 @@ window.addEventListener('touchmove', e=> {
 }, { passive: false });
 
 // jump
-document.addEventListener('touchstart', $=> {
+document.addEventListener('touchstart', e=> {
   resumeAudio();
   if (game_state === 'intro') {
     game_state= 'playing'
-  } else if (!gameover) {
+  } else if (gameover) {
+    e.preventDefault();
+    restartGame();
+  } else {
     human.jump();
   }
 });
@@ -414,3 +469,6 @@ document.addEventListener('touchstart', $=> {
 document.addEventListener('touchend', $=> {
   human.releaseJump();
 });
+
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
