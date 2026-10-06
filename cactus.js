@@ -2,9 +2,22 @@
 
 const canvas= document.getElementById('canvas');
 const ctx= canvas.getContext('2d');
-canvas.width= 355
-canvas.height= 200
 
+// logical game resolution; the canvas backing store is scaled to fit the screen and devicePixelRatio
+const W= 355
+const H= 200
+let scale= 1
+function resizeCanvas() {
+  scale= Math.min((window.innerWidth - 2) / W, (window.innerHeight - 2) / H)
+  const dpr= window.devicePixelRatio || 1
+  canvas.style.width= `${W * scale}px`
+  canvas.style.height= `${H * scale}px`
+  canvas.width= Math.round(W * scale * dpr)
+  canvas.height= Math.round(H * scale * dpr)
+  ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+  ctx.imageSmoothingEnabled= false
+  positionRestartButton();
+}
 
 
 
@@ -30,16 +43,21 @@ star_img.src= 'public/star.png'
 
 
 
-
 // game status
 let game_state= 'intro'
 
 // score
 let current_score= 0
-let high_score= localStorage.getItem('high_score') || 0
+let high_score= Number(localStorage.getItem('high_score')) || 0
+let is_new_high= false
 
 // 사운드
 const audioCtx= new window.AudioContext();
+function resumeAudio() {
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+}
 function playBeep(frequency, startTime, duration) {
   const oscillator= audioCtx.createOscillator();
   const gainNode= audioCtx.createGain();
@@ -69,7 +87,7 @@ function playGameOverSound() {
 class Human {
   constructor() {
     this.x= 10
-    this.y= canvas.height - 30
+    this.y= H - 30
     this.width= 30
     this.height= 30
     this.velocity_y= 0
@@ -80,18 +98,18 @@ class Human {
     this.frame_timer= 0
   }
 
-  draw() {
+  draw(dt) {
     let human_img
     if (this.jumping) {
       if (this.velocity_y < 0) {
         human_img= jumpOnImg
-      } else if (this.velocity_y >= 0 && this.y < canvas.height - 120) {
+      } else if (this.velocity_y >= 0 && this.y < H - 120) {
         human_img= jumpIngImg
       } else {
         human_img= jumpDownImg
       }
     } else {
-      this.frame_timer++
+      this.frame_timer+= dt
       if (this.frame_timer>= this.frame_interval) {
         this.frame= (this.frame + 1) % human_array.length
         this.frame_timer= 0
@@ -101,12 +119,12 @@ class Human {
     ctx.drawImage(human_img, this.x, this.y, this.width, this.height);
   }
 
-  update() {
+  update(dt) {
     if (this.jumping) {
-      this.velocity_y += this.gravity
-      this.y+= this.velocity_y
-      if (this.y + this.height >= canvas.height) {
-        this.y= canvas.height - this.height
+      this.velocity_y += this.gravity * dt
+      this.y+= this.velocity_y * dt
+      if (this.y + this.height >= H) {
+        this.y= H - this.height
         this.jumping= false
         this.velocity_y= 0
       }
@@ -120,48 +138,38 @@ class Human {
       playJumpSound();
     }
   }
+
+  // releasing the jump input early cuts the ascent short for a lower hop
+  releaseJump() {
+    if (this.jumping && this.velocity_y < MIN_JUMP_VELOCITY) {
+      this.velocity_y= MIN_JUMP_VELOCITY
+    }
+  }
 }
+// a tap still clears the cactus; holding the key keeps the full -10 launch
+const MIN_JUMP_VELOCITY= -6.5
 let human = new Human();
 
 
 
 
-// Cactus
-class Cactus {
-  constructor() {
-    this.x= canvas.width
-    this.y= canvas.height - 42
+// Obstacle
+const cactus_images= [cactus_img, cactus_img2]
+class Obstacle {
+  constructor(img) {
+    this.img= img
+    this.x= W
+    this.y= H - 42
     this.width= 30
     this.height= 45
   }
 
   draw() {
-    ctx.drawImage(cactus_img, this.x, this.y, this.width, this.height);
+    ctx.drawImage(this.img, this.x, this.y, this.width, this.height);
   }
 
-  update() {
-    this.x -= 4
-  }
-}
-
-
-
-
-// Cactus2
-class Cactus2 {
-  constructor() {
-    this.x= canvas.width
-    this.y= canvas.height - 42
-    this.width= 30
-    this.height= 45
-  }
-
-  draw() {
-    ctx.drawImage(cactus_img2, this.x, this.y, this.width, this.height);
-  }
-
-  update() {
-    this.x -= 4;
+  update(dt, speed) {
+    this.x -= speed * dt
   }
 }
 
@@ -171,23 +179,32 @@ class Cactus2 {
 // Star
 class Star {
   constructor() {
-    this.x= Math.random() * canvas.width
-    this.y= Math.random() * canvas.height
+    this.x= Math.random() * W
+    this.y= 0
     this.size= Math.random() * 2 + 1
     this.speed= Math.random() * 0.5 + 0.5
+    this.place();
+  }
+
+  // keep stars out of the score block and off the ground line
+  place() {
+    this.y= 8 + Math.random() * (H - 70)
+    if (this.x > W - 160 && this.y < 58) {
+      this.y= 58 + Math.random() * 50
+    }
   }
 
   draw() {
     ctx.drawImage(star_img, this.x, this.y, this.size * 10, this.size * 10);
   }
 
-  update() {
-    this.x -= this.speed
+  update(dt) {
+    this.x -= this.speed * dt
     if (this.x < 0) {
-      this.x= canvas.width
-      this.y= Math.random() * canvas.height
+      this.x= W
       this.size= Math.random() * 2 + 1
       this.speed= Math.random() * 0.5 + 0.5
+      this.place();
     }
   }
 }
@@ -202,15 +219,17 @@ for (let i = 0; i < numberOfStars; i++) {
 
 // variable
 let gameover= false
-let cactus_array= []
-let cactus2_array= []
+let obstacles= []
 let timer= 0
 let animation
-let last_cactus_time= 0 // last cactus spawn time
-let last_cactus2_time= 0
-const cactusInterval= 240 // cactus spawn interval
-const cactus2Interval= 500
-const minCactusGap= 100 // minimum gap time between cactus
+let last_frame_time= null
+const FIRST_SPAWN_TIME= 120
+let next_spawn_time= FIRST_SPAWN_TIME
+const BASE_SPEED= 4
+const MAX_SPEED= 9
+const SPEED_PER_SCORE= 0.005
+const FRAME_MS= 1000 / 60
+const MAX_DT= 3 // clamp so a backgrounded tab doesn't teleport obstacles
 
 
 
@@ -218,13 +237,13 @@ const minCactusGap= 100 // minimum gap time between cactus
 // intro
 function drawIntro() {
   ctx.fillStyle= 'black'
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, W, H);
   ctx.font= '28px serif'
   ctx.fillStyle= 'white'
   ctx.textAlign= 'center'
-  ctx.fillText('cactus jumping', canvas.width / 2, canvas.height / 3);
+  ctx.fillText('cactus jumping', W / 2, H / 3);
   ctx.font= '20px serif'
-  ctx.fillText('space to start', canvas.width / 2, canvas.height / 2);
+  ctx.fillText('space to start', W / 2, H / 2);
 }
 
 // score
@@ -232,95 +251,116 @@ function drawScore() {
   ctx.font= '15px serif'
   ctx.fillStyle= 'black'
   ctx.textAlign= 'right'
-  ctx.fillText(`Score: ${current_score}`, canvas.width - 20, 30);
-  ctx.fillText(`High Score: ${high_score}`, canvas.width - 20, 50);
+  ctx.fillText(`Score: ${current_score}`, W - 20, 30);
+  ctx.fillText(`High Score: ${high_score}`, W - 20, 50);
+}
+
+function drawGround() {
+  ctx.strokeStyle= 'black'
+  ctx.lineWidth= 1
+  ctx.beginPath();
+  ctx.moveTo(0, H - 0.5);
+  ctx.lineTo(W, H - 0.5);
+  ctx.stroke();
+}
+
+
+
+
+// difficulty
+function getSpeed() {
+  return Math.min(BASE_SPEED + current_score * SPEED_PER_SCORE, MAX_SPEED)
+}
+
+// Gap in frames until the next spawn. A full jump takes 40 frames in the air, so the
+// minimum gap must leave room to land, react and jump again at the current speed.
+function randomSpawnGap(speed) {
+  const min_gap= Math.max(65, 130 - (speed - BASE_SPEED) * 12)
+  return min_gap + Math.random() * min_gap
 }
 
 
 
 
 // game loop
-function frame60() {
+function frame60(timestamp) {
+  // dt is measured in 60fps frames so the game runs at the same speed on any refresh rate
+  const dt= last_frame_time === null ? 1 : Math.min((timestamp - last_frame_time) / FRAME_MS, MAX_DT)
+  last_frame_time= timestamp
 
-  gameover ? null : animation = requestAnimationFrame(frame60);
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(0, 0, W, H);
 
   if (game_state === 'intro') {
     drawIntro();
   } else if (game_state === 'playing') {
-    timer++;
+    timer+= dt;
     current_score= Math.floor(timer / 10);
 
     stars.forEach(e=> {
-      e.update();
+      e.update(dt);
       e.draw();
     });
 
-    human.update();
-    human.draw();
+    drawGround();
+
+    human.update(dt);
+    human.draw(dt);
+
+    // obstacle gen
+    const speed= getSpeed();
+    if (timer >= next_spawn_time) {
+      const img= cactus_images[Math.floor(Math.random() * cactus_images.length)]
+      obstacles.push(new Obstacle(img));
+      next_spawn_time= timer + randomSpawnGap(speed);
+    }
+    obstacles.forEach(obstacle=> {
+      obstacle.update(dt, speed);
+      obstacle.draw();
+      collision_detection(human, obstacle);
+    });
+    obstacles= obstacles.filter(obstacle=> obstacle.x + obstacle.width >= 0);
 
     drawScore();
-    
-
-
-
-    // cactus gen
-    if (timer - last_cactus_time > cactusInterval) {
-      let cactus= new Cactus();
-      cactus_array.push(cactus);
-      last_cactus_time= timer;
-    }
-    cactus_array.forEach((cactus, index, array)=> {
-      if (cactus.x + cactus.width < 0) {
-        array.splice(index, 1);
-      }
-      cactus.update();
-      cactus.draw();
-      collision_detection(human, cactus);
-    });
-
-    // cactus2 gen
-    if (timer - last_cactus2_time > cactus2Interval && timer - last_cactus_time > minCactusGap) {
-      let cactus2= new Cactus2();
-      cactus2_array.push(cactus2);
-      last_cactus2_time = timer;
-    }
-    cactus2_array.forEach((cactus2, index, array) => {
-      if (cactus2.x + cactus2.width < 0) {
-        array.splice(index, 1);
-      }
-      cactus2.update();
-      cactus2.draw();
-      collision_detection(human, cactus2);
-    });
 
     if (gameover) {
       ctx.fillStyle = 'rgba(128, 128, 128, 0.5)' // translucent gray
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, W, H);
 
+      ctx.fillStyle= 'rgba(255, 255, 255, 0.92)'
+      ctx.fillRect(W / 2 - 120, 68, 240, 64);
       ctx.font= '32px serif'
       ctx.fillStyle= 'black'
       ctx.textAlign= 'center'
-      ctx.fillText('game over', canvas.width / 2, canvas.height / 2 - 24);
+      ctx.fillText('game over', W / 2, 96);
+      if (is_new_high) {
+        ctx.font= '18px serif'
+        ctx.fillText('New High Score!', W / 2, 122);
+      }
       create_restartbutton();
     }
   }
+
+  if (!gameover) {
+    animation= requestAnimationFrame(frame60);
+  }
 }
-frame60();
+animation= requestAnimationFrame(frame60);
 
 
 
 
 // collision
 function collision_detection(human, cactus) {
-  const h_left= human.x
-  const h_right= human.x + human.width
-  const h_top= human.y
+  if (gameover) return
+
+  // hitboxes are inset from the sprites so near misses on transparent edges don't count
+  const h_left= human.x + 6
+  const h_right= human.x + human.width - 6
+  const h_top= human.y + 4
   const h_bot= human.y + human.height
-  const c_left= cactus.x
-  const c_right= cactus.x + cactus.width
-  const c_top= cactus.y
+  const c_left= cactus.x + 7
+  const c_right= cactus.x + cactus.width - 7
+  const c_top= cactus.y + 5
   const c_bot= cactus.y + cactus.height
 
   if (h_right > c_left && h_left < c_right && h_bot > c_top && h_top < c_bot) {
@@ -330,6 +370,7 @@ function collision_detection(human, cactus) {
 
     // update high score
     if (current_score > high_score) {
+      is_new_high= true
       high_score= current_score
       localStorage.setItem('high_score', high_score);
     }
@@ -338,34 +379,51 @@ function collision_detection(human, cactus) {
 
 
 
-// restart button
-function create_restartbutton() {
-  let button= document.createElement('img');
-  button.src= `public/restart.png`
-  button.style.position = 'absolute'
-  button.style.left= `${canvas.offsetLeft + canvas.width / 2}px`
-  button.style.top= `${canvas.offsetTop + canvas.height / 2}px`
-  button.style.transform= 'translateX(-50%)'
-  button.style.width= '100px'
-  document.body.appendChild(button);
 
-  button.addEventListener('click', $=> {
-    document.body.removeChild(button);
+// restart button
+let restart_button= null
+function create_restartbutton() {
+  if (restart_button) return
+  restart_button= document.createElement('img');
+  restart_button.src= `public/restart.png`
+  restart_button.alt= 'restart'
+  document.body.appendChild(restart_button);
+  positionRestartButton();
+
+  restart_button.addEventListener('click', $=> {
     restartGame();
   });
 }
 
+function positionRestartButton() {
+  if (!restart_button) return
+  restart_button.style.position= 'absolute'
+  restart_button.style.left= `${canvas.offsetLeft + (W * scale) / 2}px`
+  restart_button.style.top= `${canvas.offsetTop + 136 * scale}px`
+  restart_button.style.transform= 'translateX(-50%)'
+  restart_button.style.width= `${100 * scale}px`
+}
+
+function removeRestartButton() {
+  if (!restart_button) return
+  restart_button.remove();
+  restart_button= null
+}
+
 function restartGame() {
+  if (!gameover) return
+  cancelAnimationFrame(animation);
+  removeRestartButton();
   gameover= false
+  is_new_high= false
   game_state= 'playing'
   human= new Human();
-  cactus_array= []
-  cactus2_array= []
+  obstacles= []
   timer= 0
   current_score= 0
-  last_cactus_time= 0
-  last_cactus2_time= 0
-  frame60();
+  next_spawn_time= FIRST_SPAWN_TIME
+  last_frame_time= null
+  animation= requestAnimationFrame(frame60);
 }
 
 
@@ -374,11 +432,21 @@ function restartGame() {
 // jump and start
 document.addEventListener('keydown', e=> {
   if (e.code === 'Space') {
+    e.preventDefault();
+    resumeAudio();
     if (game_state === 'intro') {
       game_state= 'playing'
-    } else if (!gameover) {
+    } else if (gameover) {
+      restartGame();
+    } else {
       human.jump();
     }
+  }
+});
+
+document.addEventListener('keyup', e=> {
+  if (e.code === 'Space') {
+    human.releaseJump();
   }
 });
 
@@ -393,10 +461,21 @@ window.addEventListener('touchmove', e=> {
 }, { passive: false });
 
 // jump
-document.addEventListener('touchstart', $=> {
+document.addEventListener('touchstart', e=> {
+  resumeAudio();
   if (game_state === 'intro') {
     game_state= 'playing'
-  } else if (!gameover) {
+  } else if (gameover) {
+    e.preventDefault();
+    restartGame();
+  } else {
     human.jump();
   }
 });
+
+document.addEventListener('touchend', $=> {
+  human.releaseJump();
+});
+
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
