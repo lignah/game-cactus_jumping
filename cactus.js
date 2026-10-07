@@ -155,18 +155,23 @@ let human = new Human();
 
 // Obstacle
 // short cacti are cleared by a tap; tall ones need the held jump
-const cactus_images= [cactus_img, cactus_img2]
+// art is square, so width follows height and the picture is not stretched
+// pads are the transparent margins of each file, as a fraction of that square
 const OBSTACLE_KINDS= [
-  { width: 22, height: 34, padX: 5, padTop: 4 },
-  { width: 26, height: 74, padX: 6, padTop: 5 },
+  { img: cactus_img, height: 34, padX: 0.25, padTop: 0.02, tall: false },
+  { img: cactus_img2, height: 74, padX: 0.21, padTop: 0.15, tall: true },
 ]
 class Obstacle {
-  constructor(img, kind) {
-    this.img= img
-    this.width= kind.width
+  constructor(kind) {
+    this.img= kind.img
+    this.tall= kind.tall
     this.height= kind.height
-    this.padX= kind.padX
-    this.padTop= kind.padTop
+    const aspect= kind.img.naturalWidth > 0 && kind.img.naturalHeight > 0
+      ? kind.img.naturalWidth / kind.img.naturalHeight
+      : 1
+    this.width= Math.round(kind.height * aspect)
+    this.padX= Math.round(this.width * kind.padX)
+    this.padTop= Math.round(this.height * kind.padTop)
     this.x= W
     this.y= H - kind.height + 3
   }
@@ -227,6 +232,7 @@ for (let i = 0; i < numberOfStars; i++) {
 // variable
 let gameover= false
 let obstacles= []
+let obstacles_spawned= 0
 let timer= 0
 let animation
 let last_frame_time= null
@@ -245,12 +251,13 @@ const MAX_DT= 3 // clamp so a backgrounded tab doesn't teleport obstacles
 function drawIntro() {
   ctx.fillStyle= 'black'
   ctx.fillRect(0, 0, W, H);
-  ctx.font= '28px serif'
   ctx.fillStyle= 'white'
   ctx.textAlign= 'center'
-  ctx.fillText('cactus jumping', W / 2, H / 3);
-  ctx.font= '20px serif'
-  ctx.fillText('space to start', W / 2, H / 2);
+  ctx.font= '28px serif'
+  ctx.fillText('cactus jumping', W / 2, 72);
+  ctx.font= '16px serif'
+  ctx.fillText('tap or space to start', W / 2, 108);
+  ctx.fillText('hold to jump higher', W / 2, 132);
 }
 
 // score
@@ -262,12 +269,20 @@ function drawScore() {
   ctx.fillText(`High Score: ${high_score}`, W - 20, 50);
 }
 
-function drawGround() {
+let ground_offset= 0
+function drawGround(distance) {
+  const dash= 8
+  const gap= 6
+  const period= dash + gap
+  ground_offset= (ground_offset + distance) % period
   ctx.strokeStyle= 'black'
   ctx.lineWidth= 1
   ctx.beginPath();
-  ctx.moveTo(0, H - 0.5);
-  ctx.lineTo(W, H - 0.5);
+  const y= H - 0.5
+  for (let x= -ground_offset; x < W; x+= period) {
+    ctx.moveTo(x, y);
+    ctx.lineTo(Math.min(x + dash, W), y);
+  }
   ctx.stroke();
 }
 
@@ -308,17 +323,19 @@ function frame60(timestamp) {
       e.draw();
     });
 
-    drawGround();
+    const speed= getSpeed();
+    drawGround(speed * dt);
 
     human.update(dt);
     human.draw(dt);
 
-    // obstacle gen
-    const speed= getSpeed();
+    // first cactus is short, the second is tall, then the mix is random
     if (timer >= next_spawn_time) {
-      const img= cactus_images[Math.floor(Math.random() * cactus_images.length)]
-      const kind= OBSTACLE_KINDS[Math.floor(Math.random() * OBSTACLE_KINDS.length)]
-      obstacles.push(new Obstacle(img, kind));
+      const kind= obstacles_spawned < 2
+        ? OBSTACLE_KINDS[obstacles_spawned]
+        : OBSTACLE_KINDS[Math.floor(Math.random() * OBSTACLE_KINDS.length)]
+      obstacles_spawned++
+      obstacles.push(new Obstacle(kind));
       next_spawn_time= timer + randomSpawnGap(speed);
     }
     obstacles.forEach(obstacle=> {
@@ -427,6 +444,8 @@ function restartGame() {
   game_state= 'playing'
   human= new Human();
   obstacles= []
+  obstacles_spawned= 0
+  ground_offset= 0
   timer= 0
   current_score= 0
   next_spawn_time= FIRST_SPAWN_TIME
