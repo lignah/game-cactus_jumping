@@ -99,24 +99,14 @@ class Human {
   }
 
   draw(dt) {
-    let human_img
-    if (this.jumping) {
-      if (this.velocity_y < 0) {
-        human_img= jumpOnImg
-      } else if (this.velocity_y >= 0 && this.y < H - 120) {
-        human_img= jumpIngImg
-      } else {
-        human_img= jumpDownImg
-      }
-    } else {
+    if (!this.jumping) {
       this.frame_timer+= dt
       if (this.frame_timer>= this.frame_interval) {
         this.frame= (this.frame + 1) % human_array.length
         this.frame_timer= 0
       }
-      human_img= human_array[this.frame]
     }
-    ctx.drawImage(human_img, this.x, this.y, this.width, this.height);
+    ctx.drawImage(humanSprite(this), this.x, this.y, this.width, this.height);
   }
 
   update(dt) {
@@ -156,22 +146,18 @@ let human = new Human();
 // Obstacle
 // short cacti are cleared by a tap; tall ones need the held jump
 // art is square, so width follows height and the picture is not stretched
-// pads are the transparent margins of each file, as a fraction of that square
 const OBSTACLE_KINDS= [
-  { img: cactus_img, height: 34, padX: 0.25, padTop: 0.02, tall: false },
-  { img: cactus_img2, height: 74, padX: 0.21, padTop: 0.15, tall: true },
+  { img: cactus_img, height: 34 },
+  { img: cactus_img2, height: 74 },
 ]
 class Obstacle {
   constructor(kind) {
     this.img= kind.img
-    this.tall= kind.tall
     this.height= kind.height
     const aspect= kind.img.naturalWidth > 0 && kind.img.naturalHeight > 0
       ? kind.img.naturalWidth / kind.img.naturalHeight
       : 1
     this.width= Math.round(kind.height * aspect)
-    this.padX= Math.round(this.width * kind.padX)
-    this.padTop= Math.round(this.height * kind.padTop)
     this.x= W
     this.y= H - kind.height + 3
   }
@@ -239,8 +225,8 @@ let last_frame_time= null
 const FIRST_SPAWN_TIME= 120
 let next_spawn_time= FIRST_SPAWN_TIME
 const BASE_SPEED= 4
-const MAX_SPEED= 9
-const SPEED_PER_SCORE= 0.005
+const MAX_SPEED= 8
+const SPEED_PER_SCORE= 0.025
 const FRAME_MS= 1000 / 60
 const MAX_DT= 3 // clamp so a backgrounded tab doesn't teleport obstacles
 
@@ -294,11 +280,22 @@ function getSpeed() {
   return Math.min(BASE_SPEED + current_score * SPEED_PER_SCORE, MAX_SPEED)
 }
 
-// Gap in frames until the next spawn. A full jump takes 40 frames in the air, so the
-// minimum gap must leave room to land, react and jump again at the current speed.
-function randomSpawnGap(speed) {
-  const min_gap= Math.max(65, 130 - (speed - BASE_SPEED) * 12)
-  return min_gap + Math.random() * min_gap
+// Frames between cactus left edges. A full jump is airborne for 39 frames and needs
+// about 10 more to jump again. At the speed cap a tall cactus is 74/8 frames wide,
+// so anything under 58 frames lands the player on the next cactus.
+const MIN_SPAWN_GAP= 58
+const TUTORIAL_SPAWN_GAP= 110
+function randomSpawnGap() {
+  if (obstacles_spawned <= 2) return TUTORIAL_SPAWN_GAP
+  const base= Math.max(MIN_SPAWN_GAP, 120 - current_score * 0.4)
+  return base + Math.random() * base * 0.2
+}
+
+function nextObstacleKind() {
+  if (obstacles_spawned === 0) return OBSTACLE_KINDS[0]
+  if (obstacles_spawned === 1) return OBSTACLE_KINDS[1]
+  const tallChance= Math.min(0.6, 0.3 + Math.max(0, current_score - 40) * 0.002)
+  return OBSTACLE_KINDS[Math.random() < tallChance ? 1 : 0]
 }
 
 
@@ -329,14 +326,12 @@ function frame60(timestamp) {
     human.update(dt);
     human.draw(dt);
 
-    // first cactus is short, the second is tall, then the mix is random
+    // first cactus is short, the second is tall, then tall ones become more common
     if (timer >= next_spawn_time) {
-      const kind= obstacles_spawned < 2
-        ? OBSTACLE_KINDS[obstacles_spawned]
-        : OBSTACLE_KINDS[Math.floor(Math.random() * OBSTACLE_KINDS.length)]
+      const kind= nextObstacleKind()
       obstacles_spawned++
       obstacles.push(new Obstacle(kind));
-      next_spawn_time= timer + randomSpawnGap(speed);
+      next_spawn_time= timer + randomSpawnGap();
     }
     obstacles.forEach(obstacle=> {
       obstacle.update(dt, speed);
@@ -374,31 +369,88 @@ animation= requestAnimationFrame(frame60);
 
 
 
+function humanSprite(human) {
+  if (!human.jumping) return human_array[human.frame]
+  if (human.velocity_y < 0) return jumpOnImg
+  if (human.y < H - 120) return jumpIngImg
+  return jumpDownImg
+}
+
+// opaque spans per image row, so the empty corners of a cactus are not solid
+function spriteMask(img) {
+  if (img._mask) return img._mask
+  if (!img.complete || img.naturalWidth === 0) return null
+  const w= img.naturalWidth
+  const h= img.naturalHeight
+  const scratch= document.createElement('canvas')
+  scratch.width= w
+  scratch.height= h
+  const g= scratch.getContext('2d', { willReadFrequently: true })
+  g.drawImage(img, 0, 0)
+  const data= g.getImageData(0, 0, w, h).data
+  const rows= new Array(h)
+  for (let y= 0; y < h; y++) {
+    const spans= []
+    let start= -1
+    for (let x= 0; x < w; x++) {
+      const solid= data[(y * w + x) * 4 + 3] > 128
+      if (solid && start < 0) start= x
+      if (!solid && start >= 0) {
+        spans.push([start, x])
+        start= -1
+      }
+    }
+    if (start >= 0) spans.push([start, w])
+    rows[y]= spans
+  }
+  img._mask= { w, h, rows }
+  return img._mask
+}
+
+function rowHits(hSpans, hx, hw, hsw, cSpans, cx, cw, csw) {
+  for (let i= 0; i < hSpans.length; i++) {
+    const a0= hx + hSpans[i][0] / hsw * hw
+    const a1= hx + hSpans[i][1] / hsw * hw
+    for (let j= 0; j < cSpans.length; j++) {
+      const b0= cx + cSpans[j][0] / csw * cw
+      const b1= cx + cSpans[j][1] / csw * cw
+      if (a1 > b0 && a0 < b1) return true
+    }
+  }
+  return false
+}
+
+function spritesTouch(aImg, ax, ay, aw, ah, bImg, bx, by, bw, bh) {
+  const a= spriteMask(aImg)
+  const b= spriteMask(bImg)
+  if (!a || !b) return false
+  const top= Math.max(ay, by)
+  const bot= Math.min(ay + ah, by + bh)
+  if (top >= bot) return false
+  const left= Math.max(ax, bx)
+  const right= Math.min(ax + aw, bx + bw)
+  if (left >= right) return false
+  for (let y= Math.floor(top); y < Math.ceil(bot); y++) {
+    const ayRow= Math.min(a.h - 1, Math.max(0, Math.floor((y - ay) / ah * a.h)))
+    const byRow= Math.min(b.h - 1, Math.max(0, Math.floor((y - by) / bh * b.h)))
+    if (rowHits(a.rows[ayRow], ax, aw, a.w, b.rows[byRow], bx, bw, b.w)) return true
+  }
+  return false
+}
+
 // collision
 function collision_detection(human, cactus) {
   if (gameover) return
+  if (!spritesTouch(humanSprite(human), human.x, human.y, human.width, human.height, cactus.img, cactus.x, cactus.y, cactus.width, cactus.height)) return
 
-  // hitboxes are inset from the sprites so near misses on transparent edges don't count
-  const h_left= human.x + 6
-  const h_right= human.x + human.width - 6
-  const h_top= human.y + 4
-  const h_bot= human.y + human.height
-  const c_left= cactus.x + cactus.padX
-  const c_right= cactus.x + cactus.width - cactus.padX
-  const c_top= cactus.y + cactus.padTop
-  const c_bot= cactus.y + cactus.height
+  gameover= true
+  cancelAnimationFrame(animation);
+  playGameOverSound();
 
-  if (h_right > c_left && h_left < c_right && h_bot > c_top && h_top < c_bot) {
-    gameover= true
-    cancelAnimationFrame(animation);
-    playGameOverSound();
-
-    // update high score
-    if (current_score > high_score) {
-      is_new_high= true
-      high_score= current_score
-      localStorage.setItem('high_score', high_score);
-    }
+  if (current_score > high_score) {
+    is_new_high= true
+    high_score= current_score
+    localStorage.setItem('high_score', high_score);
   }
 }
 
